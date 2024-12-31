@@ -1,19 +1,21 @@
 import fs from "node:fs";
-import { chromium } from "playwright";
+import { Browser, chromium, Page } from "playwright";
 import retry from "async-retry";
 
-const getMangaData = async (page, browser) => {
+const baseURL = "https://www.listadomanga.es";
+
+const getMangaData = async (page: Page, browser: Browser) => {
 	const mangaList = await page.$$eval("[href^='coleccion.php?id=']", (results) =>
 		results.map((result) => ({
 			title: result.textContent,
-			url: result.href,
+			url: result.getAttribute("href") ?? "",
 		}))
 	);
 
 	const genreList = await page.$$eval("[href^='lista.php?genero=']", (results) =>
 		results.map((result) => ({
 			title: result.textContent,
-			url: result.href,
+			url: result.getAttribute("href") ?? "",
 		}))
 	);
 
@@ -21,7 +23,11 @@ const getMangaData = async (page, browser) => {
 		genreList.map(async (genre) => {
 			const context = await browser.newContext();
 			const p = await context.newPage();
-			await p.goto(genre.url);
+			await p.goto(`${baseURL}/${genre.url}`);
+
+			p.screenshot({path: "genre.png"});
+
+			console.log("Obteniendo mangas de género");
 
 			const genreWithMangas = await p.$$eval("[href^='coleccion.php?id=']", (results) => {
 				return results.map((result) => {
@@ -29,17 +35,23 @@ const getMangaData = async (page, browser) => {
 
 					const nodes = result.parentElement.childNodes;
 
-					nodes.map((node) => {
+					console.log(result.parentElement.childNodes);
+
+					[...nodes].map((node) => {
 						console.log(node.textContent);
 					});
 				});
-				return [{
-					title: results[0].parentElement.childNodestextContent,
-					url: results[0].href,
-				}];
+				// return [{
+				// 	title: results[0].parentElement.childNodestextContent,
+				// 	url: results[0].href,
+				// }];
 			});
 
+			console.log(genreWithMangas);
+
 			p.close();
+
+
 
 			return { ...genre, list: genreWithMangas };
 		})
@@ -68,10 +80,10 @@ async function main() {
 		await page.goto("https://www.listadomanga.es/lista.php", { timeout: 600_000 });
 
 		console.log("Aceptando cookies");
-		await page.getByRole("button", {name: "ACEPTO"}).click();
+		await page.getByRole("button", { name: "ACEPTO" }).click();
 
 		console.log("Obteniendo lista de mangas");
-		await getMangaData(page, browser)
+		await getMangaData(page, browser);
 
 		await page.screenshot({ path: "succeded.png" });
 	} catch (err) {
@@ -84,7 +96,7 @@ async function main() {
 
 retry(main, {
 	retries: 3,
-	onRetry: (e, attempt) => {
+	onRetry: (e: Error, attempt) => {
 		console.log(`Intento ${attempt} fallido: ${e.message}`);
 	},
 });

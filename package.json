@@ -2,9 +2,9 @@
   "name": "listado-manga-scrapper",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
-    "start": "node index.mjs",
+    "start": "ts-node index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,5 +13,11 @@
   "dependencies": {
     "async-retry": "1.3.3",
     "playwright": "1.49.1"
+  },
+  "devDependencies": {
+    "typescript": "5.7.2",
+    "@types/async-retry": "1.4.9",
+    "@types/node": "22.10.2",
+    "ts-node": "10.9.2"
   }
 }
