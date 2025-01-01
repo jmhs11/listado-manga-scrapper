@@ -4,68 +4,78 @@ import retry from "async-retry";
 
 const baseURL = "https://www.listadomanga.es";
 
+const acceptCookies = async (page: Page) => {
+	const isCookiesBannerVisible = await page.isVisible(".qc-cmp2-summary-buttons")
+
+	if (!isCookiesBannerVisible) return;
+
+	console.log("Aceptando Cookies de la nueva página")
+	await page.getByRole("button", { name: "ACEPTO" }).click();
+}
+
 const getMangaData = async (page: Page, browser: Browser) => {
-	const mangaList = await page.$$eval("[href^='coleccion.php?id=']", (results) =>
+	const mangaGenre = {
+		id: 1,
+		title: "Manga 漫画",
+		url: "lista.php",
+	};
+
+	const genreRest = await page.$$eval("[href^='lista.php?genero=']", (results) =>
 		results.map((result) => ({
+			id: Number(result.getAttribute("href")?.split("=")[1]),
 			title: result.textContent,
 			url: result.getAttribute("href") ?? "",
 		}))
 	);
 
-	const genreList = await page.$$eval("[href^='lista.php?genero=']", (results) =>
-		results.map((result) => ({
-			title: result.textContent,
-			url: result.getAttribute("href") ?? "",
-		}))
-	);
+	const genreList = [mangaGenre, ...genreRest].map((genre) => ({ ...genre, url: `${baseURL}/${genre.url}` })).sort((a, b) => a.id - b.id);
 
-	const test = await Promise.all(
-		genreList.map(async (genre) => {
+	console.log(genreList);
+
+	for (const genre of genreList) {
+		console.log("Navegando a la página del género", genre.title);
+		const page = await browser.newPage();
+
+		await page.goto(genre.url);
+
+		await acceptCookies(page);
+
+		console.log("Capturando pantalla")
+		await page.screenshot({ path: `./screenshots/genres/${genre.title}.png`, fullPage: true });
+
+		const mangaList = await page.$$eval("[href^='coleccion.php?id=']", (results) =>
+			results.map((result) => ({
+				title: result.textContent,
+				url: result.getAttribute("href") ?? "",
+			}))
+		);
+
+		for (const manga of mangaList.map((manga) => ({ ...manga, url: `${baseURL}/${manga.url}` }))) {
+			console.log("Navegando a la página del manga", manga.title);
 			const context = await browser.newContext();
-			const p = await context.newPage();
-			await p.goto(`${baseURL}/${genre.url}`);
 
-			p.screenshot({path: "genre.png"});
+			context.addCookies([
+				{
+					name: "mostrarNSFW",
+					value: "true",
+					url: baseURL
+				}
+			]);
 
-			console.log("Obteniendo mangas de género");
+			const page = await context.newPage();
 
-			const genreWithMangas = await p.$$eval("[href^='coleccion.php?id=']", (results) => {
-				return results.map((result) => {
-					if (!result.parentElement) return;
+			await page.goto(manga.url);
 
-					const nodes = result.parentElement.childNodes;
+			await acceptCookies(page);
 
-					console.log(result.parentElement.childNodes);
+			console.log("Capturando pantalla")
+			await page.screenshot({ path: `./screenshots/mangas/${manga.title}.png`, fullPage: true });
 
-					[...nodes].map((node) => {
-						console.log(node.textContent);
-					});
-				});
-				// return [{
-				// 	title: results[0].parentElement.childNodestextContent,
-				// 	url: results[0].href,
-				// }];
-			});
+			await page.close();
+		}
 
-			console.log(genreWithMangas);
-
-			p.close();
-
-
-
-			return { ...genre, list: genreWithMangas };
-		})
-	);
-
-	const mergedList = [{ id: 1, title: "Manga", list: mangaList }, ...test];
-
-	// fs.writeFile("./mangas.json", JSON.stringify(mergedList), "utf8", (err) => {
-	// 	if (err) {
-	// 		console.error(err);
-	// 	} else {
-	// 		console.log("File written successfully");
-	// 	}
-	// });
+		await page.close();
+	}
 };
 
 async function main() {
@@ -84,10 +94,7 @@ async function main() {
 
 		console.log("Obteniendo lista de mangas");
 		await getMangaData(page, browser);
-
-		await page.screenshot({ path: "succeded.png" });
 	} catch (err) {
-		await page.screenshot({ path: "error.png" });
 		throw err;
 	} finally {
 		await browser.close();
@@ -100,64 +107,3 @@ retry(main, {
 		console.log(`Intento ${attempt} fallido: ${e.message}`);
 	},
 });
-
-// (async () => {
-// 	const browser = await chromium.launch();
-
-// 	const context = await browser.newContext();
-// 	const page = await context.newPage();
-// 	page.setDefaultNavigationTimeout(600_000);
-
-// 	await page.goto("https://www.listadomanga.es/lista.php");
-
-// 	const mangaList = await page.$$eval("[href^='coleccion.php?id=']", (results) =>
-// 		results.map((result) => ({
-// 			title: result.textContent,
-// 			url: result.href,
-// 		}))
-// 	);
-
-// 	const genreList = await page.$$eval("[href^='lista.php?genero=']", (results) =>
-// 		results.map((result) => ({
-// 			title: result.textContent,
-// 			url: result.href,
-// 		}))
-// 	);
-
-// 	const test = await Promise.all(
-// 		genreList.map(async (genre) => {
-// 			const p = await context.newPage();
-// 			await p.goto(genre.url);
-
-// 			const genreWithMangas = await page.$$eval("[href^='coleccion.php?id=']", (results) => {
-// 				return results.map((result) => {
-// 					if (!result.parentElement) return;
-
-// 					const nodes = result.parentElement.childNodes;
-
-// 					console.log(nodes);
-// 				});
-// 				return [{
-// 					title: results[0].parentElement.childNodestextContent,
-// 					url: results[0].href,
-// 				}];
-// 			});
-
-// 			p.close();
-
-// 			return { ...genre, list: genreWithMangas };
-// 		})
-// 	);
-
-// 	const mergedList = [{ id: 1, title: "Manga", list: mangaList }, ...test];
-
-// 	await browser.close();
-
-// 	fs.writeFile("./mangas.json", JSON.stringify(mergedList), "utf8", (err) => {
-// 		if (err) {
-// 			console.error(err);
-// 		} else {
-// 			console.log("File written successfully");
-// 		}
-// 	});
-// })();
