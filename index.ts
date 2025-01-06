@@ -1,15 +1,42 @@
-import fs from "node:fs";
+import { writeFileSync } from "node:fs";
 import { Browser, chromium, Page } from "playwright";
 import retry from "async-retry";
 
 const baseURL = "https://www.listadomanga.es";
 
-const acceptCookies = async (page: Page) => {
+const getPropertyByKey = (key: string) => {
+	switch (key) {
+		case "Título original":
+			return "originalTitle";
+		case "Guion":
+			return "script";
+		case "Dibujo":
+			return "drawing";
+		case "Editorial japonesa":
+			return "japanesePublisher";
+		case "Editorial española":
+			return "spanishPublisher";
+		case "Colección":
+			return "demography";
+		case "Formato":
+			return "format";
+		case "Sentido de lectura":
+			return "readingDirection";
+		case "Números en japonés":
+			return "numOfJapaneseVolumes";
+		case "Números en castellano":
+			return "numOfSpanishVolumes";
+		default:
+			return key;
+	}
+}
+
+const acceptCookies = async (page: Page, noConsoleLog: boolean = false) => {
 	const isCookiesBannerVisible = await page.isVisible(".qc-cmp2-summary-buttons")
 
 	if (!isCookiesBannerVisible) return;
 
-	console.log("Aceptando Cookies de la nueva página")
+	if (!noConsoleLog) console.log("Aceptando Cookies de la nueva página")
 	await page.getByRole("button", { name: "ACEPTO" }).click();
 }
 
@@ -30,8 +57,6 @@ const getMangaData = async (page: Page, browser: Browser) => {
 
 	const genreList = [mangaGenre, ...genreRest].map((genre) => ({ ...genre, url: `${baseURL}/${genre.url}` })).sort((a, b) => a.id - b.id);
 
-	console.log(genreList);
-
 	for (const genre of genreList) {
 		console.log("Navegando a la página del género", genre.title);
 		const page = await browser.newPage();
@@ -50,8 +75,10 @@ const getMangaData = async (page: Page, browser: Browser) => {
 			}))
 		);
 
+		let mangaCollection = [] as Record<string, string>[];
+
 		for (const manga of mangaList.map((manga) => ({ ...manga, url: `${baseURL}/${manga.url}` }))) {
-			console.log("Navegando a la página del manga", manga.title);
+			console.log("Extrayendo manga: ", manga.title);
 			const context = await browser.newContext();
 
 			context.addCookies([
@@ -66,13 +93,33 @@ const getMangaData = async (page: Page, browser: Browser) => {
 
 			await page.goto(manga.url);
 
-			await acceptCookies(page);
+			await acceptCookies(page, true);
 
-			console.log("Capturando pantalla")
-			await page.screenshot({ path: `./screenshots/mangas/${manga.title}.png`, fullPage: true });
+			// console.log("Capturando pantalla")
+			// await page.screenshot({ path: `./screenshots/mangas/${manga.title}.png`, fullPage: true });
+
+			const $data = await page.locator(".izq").first().allInnerTexts();
+
+			const mangaData = $data[0].split("\n").reduce((acc, cur) => {
+				if (cur.includes(":")) {
+					const [key, value] = cur.split(":")
+					acc[getPropertyByKey(key)] = value.trim();
+				} else if (!cur.includes(":")) {
+					acc["title"] = cur;
+				} else {
+					acc[cur] = cur;
+				}
+				return acc;
+			}, {} as Record<string, string>);
+
+			mangaCollection = [...mangaCollection, mangaData];
 
 			await page.close();
 		}
+
+		writeFileSync(`./data/${genre.title}.json`, JSON.stringify(mangaCollection, null, 2));
+
+		console.log("Manga data saved to file");
 
 		await page.close();
 	}
