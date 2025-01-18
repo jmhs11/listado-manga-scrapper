@@ -1,3 +1,4 @@
 node_modules
 screenshots/**/*.png
 data/**/*.json
+build
